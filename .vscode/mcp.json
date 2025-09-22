@@ -1,0 +1,9 @@
+{
+	"servers": {
+		"modernize-free": {
+			"url": "https://gitmcp.io/adminmart/modernize-angular-free",
+			"type": "http"
+		}
+	},
+	"inputs": []
+}
