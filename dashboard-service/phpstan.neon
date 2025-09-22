@@ -1,0 +1,21 @@
+parameters:
+    level: 8
+    paths:
+        - app/
+        - config/
+        - database/
+        - routes/
+        - tests/
+    excludePaths:
+        - storage/
+        - bootstrap/cache/
+        - vendor/
+    checkMissingIterableValueType: false
+    checkGenericClassInNonGenericObjectType: false
+    reportUnmatchedIgnoredErrors: false
+    ignoreErrors:
+        - '#PHPDoc tag @var#'
+        - '#Undefined variable: \$this#'
+    universalObjectCratesClasses:
+        - stdClass
+        - Illuminate\Support\Fluent

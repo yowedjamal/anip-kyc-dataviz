@@ -1,0 +1,38 @@
+{
+  "name": "anip-kyc-frontend-new",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "start": "npx ng serve --open",
+    "build": "npx ng build --configuration production",
+    "test": "npx ng test --watch=false"
+  },
+  "dependencies": {
+    "@angular/animations": "^17.0.0",
+    "@angular/common": "^17.0.0",
+    "@angular/compiler": "^17.0.0",
+    "@angular/core": "^17.0.0",
+    "@angular/forms": "^17.0.0",
+    "@angular/platform-browser": "^17.0.0",
+    "@angular/platform-browser-dynamic": "^17.0.0",
+    "@angular/router": "^17.0.0",
+    "rxjs": "^7.8.0",
+    "zone.js": "^0.13.0",
+    "tslib": "^2.6.0",
+    "@angular/material": "^17.0.0",
+    "@angular/cdk": "^17.0.0"
+  },
+  "devDependencies": {
+    "@angular/cli": "^17.3.12",
+    "@angular-devkit/build-angular": "^17.3.12",
+  "@angular/compiler-cli": "^17.3.12",
+  "typescript": "5.3.3",
+    "karma": "^6.4.0",
+  "jasmine-core": "^5.1.1",
+    "karma-jasmine": "^5.1.0",
+    "karma-chrome-launcher": "^3.2.0",
+  "karma-typescript": "^5.5.4",
+    "@types/jasmine": "^4.3.0",
+    "zone.js": "^0.13.0"
+  }
+}

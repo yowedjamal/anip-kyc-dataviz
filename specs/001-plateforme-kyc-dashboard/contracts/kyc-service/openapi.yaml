@@ -1,0 +1,554 @@
+openapi: 3.0.3
+info:
+  title: ANIP KYC Service API
+  description: |
+    Service de vérification d'identité KYC pour la plateforme ANIP.
+    Gère la capture de documents, OCR multilingue, reconnaissance faciale et détection de vivacité.
+  version: 1.0.0
+  contact:
+    name: ANIP Technical Team
+    email: tech@anip.gov.ml
+
+servers:
+  - url: https://kyc-api.anip.gov.ml/v1
+    description: Production server
+  - url: https://kyc-api-staging.anip.gov.ml/v1
+    description: Staging server
+
+security:
+  - BearerAuth: []
+
+paths:
+  /sessions:
+    post:
+      summary: Initier une nouvelle session KYC
+      description: Crée une nouvelle session KYC pour un citoyen
+      operationId: createKycSession
+      tags:
+        - KYC Sessions
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - citizen_reference
+              properties:
+                citizen_reference:
+                  type: string
+                  description: Référence anonyme du citoyen
+                  example: "CIT_2025_000123456"
+                metadata:
+                  type: object
+                  description: Métadonnées optionnelles de la session
+                  properties:
+                    agent_location:
+                      type: string
+                      example: "BAMAKO_CENTRE"
+                    session_type:
+                      type: string
+                      enum: ["ENROLLMENT", "VERIFICATION", "RENEWAL"]
+                      default: "ENROLLMENT"
+      responses:
+        '201':
+          description: Session KYC créée avec succès
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  session_id:
+                    type: string
+                    format: uuid
+                    example: "123e4567-e89b-12d3-a456-426614174000"
+                  status:
+                    type: string
+                    enum: ["INITIATED"]
+                  created_at:
+                    type: string
+                    format: date-time
+                  expires_at:
+                    type: string
+                    format: date-time
+                    description: Session expire après 30 minutes d'inactivité
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+
+  /sessions/{sessionId}/documents:
+    post:
+      summary: Uploader un document d'identité
+      description: |
+        Upload et traitement OCR d'un document d'identité.
+        Performance garantie : traitement en moins de 3 secondes.
+      operationId: uploadDocument
+      tags:
+        - Documents
+      parameters:
+        - name: sessionId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required:
+                - document_image
+                - document_type
+              properties:
+                document_image:
+                  type: string
+                  format: binary
+                  description: Image du document (JPEG/PNG, max 5MB)
+                document_type:
+                  type: string
+                  enum: ["NATIONAL_ID", "PASSPORT", "VOTER_CARD", "DRIVER_LICENSE"]
+                  description: Type de document d'identité
+                capture_metadata:
+                  type: object
+                  properties:
+                    capture_quality:
+                      type: string
+                      enum: ["HIGH", "MEDIUM", "LOW"]
+                    lighting_conditions:
+                      type: string
+                      enum: ["GOOD", "POOR", "ARTIFICIAL"]
+      responses:
+        '201':
+          description: Document uploadé et traité avec succès
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  document_id:
+                    type: string
+                    format: uuid
+                  document_type:
+                    type: string
+                  ocr_results:
+                    type: object
+                    properties:
+                      extracted_text:
+                        type: object
+                        description: Informations extraites par OCR
+                        properties:
+                          full_name:
+                            type: string
+                            example: "TRAORE Amadou"
+                          document_number:
+                            type: string
+                            example: "ML123456789"
+                          date_of_birth:
+                            type: string
+                            format: date
+                          issue_date:
+                            type: string
+                            format: date
+                          expiry_date:
+                            type: string
+                            format: date
+                          issuing_authority:
+                            type: string
+                            example: "MINISTERE DE L'ADMINISTRATION TERRITORIALE"
+                      confidence_score:
+                        type: number
+                        format: float
+                        minimum: 0
+                        maximum: 1
+                        description: Score de confiance OCR (0.0 à 1.0)
+                        example: 0.94
+                      language_detected:
+                        type: string
+                        example: "fra"
+                  validation_status:
+                    type: string
+                    enum: ["VALID", "INVALID", "MANUAL_REVIEW"]
+                  processing_time_ms:
+                    type: integer
+                    description: Temps de traitement en millisecondes
+                    example: 2450
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '413':
+          $ref: '#/components/responses/PayloadTooLarge'
+        '422':
+          description: Document illisible ou de mauvaise qualité
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /sessions/{sessionId}/face-verification:
+    post:
+      summary: Vérifier correspondance faciale
+      description: |
+        Compare une photo selfie avec la photo du document d'identité.
+        Utilise des algorithmes de reconnaissance faciale avancés.
+      operationId: verifyFace
+      tags:
+        - Face Verification
+      parameters:
+        - name: sessionId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required:
+                - selfie_image
+                - document_id
+              properties:
+                selfie_image:
+                  type: string
+                  format: binary
+                  description: Photo selfie de la personne (JPEG/PNG, max 2MB)
+                document_id:
+                  type: string
+                  format: uuid
+                  description: ID du document uploadé précédemment
+                verification_settings:
+                  type: object
+                  properties:
+                    similarity_threshold:
+                      type: number
+                      format: float
+                      minimum: 0.5
+                      maximum: 1.0
+                      default: 0.85
+                      description: Seuil de similarité pour validation automatique
+      responses:
+        '200':
+          description: Vérification faciale complétée
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  face_match_id:
+                    type: string
+                    format: uuid
+                  similarity_score:
+                    type: number
+                    format: float
+                    minimum: 0
+                    maximum: 1
+                    description: Score de similarité entre selfie et document
+                    example: 0.92
+                  match_status:
+                    type: string
+                    enum: ["MATCH", "NO_MATCH", "MANUAL_REVIEW"]
+                  algorithm_used:
+                    type: string
+                    example: "DEEPFACE_VGG"
+                  face_detection_confidence:
+                    type: number
+                    format: float
+                    description: Confiance de détection du visage
+                    example: 0.98
+                  processing_time_ms:
+                    type: integer
+                    example: 1200
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          description: Document non trouvé
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /sessions/{sessionId}/liveness:
+    post:
+      summary: Détecter la vivacité (anti-spoofing)
+      description: |
+        Vérifie que la personne est bien vivante et présente physiquement.
+        Détecte les tentatives de fraude par photo, vidéo ou deepfake.
+      operationId: detectLiveness
+      tags:
+        - Liveness Detection
+      parameters:
+        - name: sessionId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required:
+                - liveness_video
+              properties:
+                liveness_video:
+                  type: string
+                  format: binary
+                  description: Vidéo courte pour détection vivacité (MP4, max 10MB, 3-5 sec)
+                detection_method:
+                  type: string
+                  enum: ["BLINK_DETECTION", "HEAD_MOVEMENT", "TEXTURE_ANALYSIS", "COMBINED"]
+                  default: "COMBINED"
+      responses:
+        '200':
+          description: Détection de vivacité complétée
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  liveness_id:
+                    type: string
+                    format: uuid
+                  liveness_score:
+                    type: number
+                    format: float
+                    minimum: 0
+                    maximum: 1
+                    description: Score de vivacité (0.0 = spoof, 1.0 = live)
+                    example: 0.87
+                  liveness_status:
+                    type: string
+                    enum: ["LIVE", "SPOOF", "MANUAL_REVIEW"]
+                  detection_details:
+                    type: object
+                    properties:
+                      eye_blink_detected:
+                        type: boolean
+                        example: true
+                      head_movement_detected:
+                        type: boolean
+                        example: true
+                      texture_analysis_score:
+                        type: number
+                        format: float
+                        example: 0.82
+                      spoofing_indicators:
+                        type: array
+                        items:
+                          type: string
+                        example: []
+                  processing_time_ms:
+                    type: integer
+                    example: 950
+        '400':
+          $ref: '#/components/responses/BadRequest'
+
+  /sessions/{sessionId}:
+    get:
+      summary: Récupérer le statut d'une session KYC
+      description: |
+        Obtient l'état actuel d'une session KYC avec tous les résultats de vérification.
+        Inclut les scores de confiance et le statut global.
+      operationId: getKycSession
+      tags:
+        - KYC Sessions
+      parameters:
+        - name: sessionId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Détails de la session KYC
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  session_id:
+                    type: string
+                    format: uuid
+                  citizen_reference:
+                    type: string
+                  status:
+                    type: string
+                    enum: ["INITIATED", "DOCUMENTS_UPLOADED", "FACE_VERIFIED", "COMPLETED", "FAILED"]
+                  overall_confidence:
+                    type: number
+                    format: float
+                    minimum: 0
+                    maximum: 1
+                    description: Score de confiance global
+                  documents:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        document_id:
+                          type: string
+                          format: uuid
+                        document_type:
+                          type: string
+                        validation_status:
+                          type: string
+                        ocr_confidence:
+                          type: number
+                          format: float
+                  face_verification:
+                    type: object
+                    nullable: true
+                    properties:
+                      similarity_score:
+                        type: number
+                        format: float
+                      match_status:
+                        type: string
+                  liveness_detection:
+                    type: object
+                    nullable: true
+                    properties:
+                      liveness_score:
+                        type: number
+                        format: float
+                      liveness_status:
+                        type: string
+                  processing_duration_ms:
+                    type: integer
+                    description: Durée totale de traitement
+                  created_at:
+                    type: string
+                    format: date-time
+                  completed_at:
+                    type: string
+                    format: date-time
+                    nullable: true
+                  failure_reason:
+                    type: string
+                    nullable: true
+        '404':
+          description: Session non trouvée
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /health:
+    get:
+      summary: Vérification santé du service
+      description: Endpoint de monitoring pour vérifier l'état du service KYC
+      operationId: healthCheck
+      tags:
+        - Monitoring
+      security: []
+      responses:
+        '200':
+          description: Service en bonne santé
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    enum: ["UP", "DOWN"]
+                  timestamp:
+                    type: string
+                    format: date-time
+                  services:
+                    type: object
+                    properties:
+                      database:
+                        type: string
+                        enum: ["UP", "DOWN"]
+                      minio:
+                        type: string
+                        enum: ["UP", "DOWN"]
+                      ocr_engine:
+                        type: string
+                        enum: ["UP", "DOWN"]
+                      face_recognition:
+                        type: string
+                        enum: ["UP", "DOWN"]
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: Token JWT obtenu via Keycloak
+
+  schemas:
+    Error:
+      type: object
+      required:
+        - error_code
+        - message
+      properties:
+        error_code:
+          type: string
+          example: "INVALID_DOCUMENT_FORMAT"
+        message:
+          type: string
+          example: "Le format du document n'est pas supporté"
+        details:
+          type: object
+          additionalProperties: true
+        timestamp:
+          type: string
+          format: date-time
+        request_id:
+          type: string
+          description: ID unique pour traçabilité
+
+  responses:
+    BadRequest:
+      description: Requête invalide
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error_code: "VALIDATION_ERROR"
+            message: "Les paramètres de la requête sont invalides"
+            timestamp: "2025-09-19T10:30:00Z"
+
+    Unauthorized:
+      description: Non autorisé - token manquant ou invalide
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error_code: "UNAUTHORIZED"
+            message: "Token d'authentification requis"
+
+    PayloadTooLarge:
+      description: Fichier trop volumineux
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error_code: "FILE_TOO_LARGE"
+            message: "La taille du fichier dépasse la limite autorisée"
+
+    RateLimited:
+      description: Trop de requêtes - limite de débit atteinte
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error_code: "RATE_LIMIT_EXCEEDED"
+            message: "Limite de 100 requêtes par minute dépassée"

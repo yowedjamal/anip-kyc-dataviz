@@ -1,0 +1,238 @@
+services:
+  # Base de données PostgreSQL + TimescaleDB
+  postgres:
+    image: timescale/timescaledb:2.11.2-pg15
+    container_name: anip-postgres
+    environment:
+      POSTGRES_DB: anip_platform
+      POSTGRES_USER: anip_user
+      POSTGRES_PASSWORD: anip_password_secure
+      TIMESCALEDB_TELEMETRY: 'off'
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./docker/postgres/init:/docker-entrypoint-initdb.d
+    networks:
+      - anip-network
+    restart: unless-stopped
+
+  # Cache Redis
+  redis:
+    image: redis:7.2-alpine
+    container_name: anip-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - anip-network
+    restart: unless-stopped
+
+  # Stockage MinIO (S3-compatible)
+  minio:
+    image: minio/minio:RELEASE.2023-09-23T03-47-50Z
+    container_name: anip-minio
+    environment:
+      MINIO_ROOT_USER: anip_minio_user
+      MINIO_ROOT_PASSWORD: anip_minio_password_secure
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - minio_data:/data
+    command: server /data --console-address ":9001"
+    networks:
+      - anip-network
+    restart: unless-stopped
+
+  # Authentification Keycloak
+  keycloak:
+    image: quay.io/keycloak/keycloak:22.0
+    container_name: anip-keycloak
+    environment:
+      KEYCLOAK_ADMIN: admin
+      KEYCLOAK_ADMIN_PASSWORD: admin_password_secure
+      KC_DB: postgres
+      KC_DB_URL: jdbc:postgresql://postgres:5432/anip_platform
+      KC_DB_USERNAME: anip_user
+      KC_DB_PASSWORD: anip_password_secure
+      KC_HOSTNAME: localhost
+      KC_HTTP_ENABLED: true
+      KC_HTTP_PORT: 8080
+    ports:
+      - "8080:8080"
+    depends_on:
+      - postgres
+    networks:
+      - anip-network
+    command: start-dev
+    restart: unless-stopped
+
+  # Logging ElasticSearch
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.10.2
+    container_name: anip-elasticsearch
+    environment:
+      - discovery.type=single-node
+      - xpack.security.enabled=false
+      - "ES_JAVA_OPTS=-Xms512m -Xmx512m"
+    ports:
+      - "9200:9200"
+    volumes:
+      - elasticsearch_data:/usr/share/elasticsearch/data
+    networks:
+      - anip-network
+    restart: unless-stopped
+
+  # Visualisation Kibana
+  kibana:
+    image: docker.elastic.co/kibana/kibana:8.10.2
+    container_name: anip-kibana
+    environment:
+      ELASTICSEARCH_HOSTS: http://elasticsearch:9200
+    ports:
+      - "5601:5601"
+    depends_on:
+      - elasticsearch
+    networks:
+      - anip-network
+    restart: unless-stopped
+
+  # Métriques Prometheus
+  prometheus:
+    image: prom/prometheus:v2.47.0
+    container_name: anip-prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheus_data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/etc/prometheus/console_libraries'
+      - '--web.console.templates=/etc/prometheus/consoles'
+      - '--web.enable-lifecycle'
+    networks:
+      - anip-network
+    restart: unless-stopped
+
+  # Visualisation Grafana
+  grafana:
+    image: grafana/grafana:10.1.0
+    container_name: anip-grafana
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: grafana_admin_password
+    ports:
+      - "3000:3000"
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./docker/grafana/provisioning:/etc/grafana/provisioning
+    depends_on:
+      - prometheus
+    networks:
+      - anip-network
+    restart: unless-stopped
+
+  # Service KYC (Spring Boot)
+  kyc-service:
+    build:
+      context: ../kyc-service
+      dockerfile: Dockerfile
+    container_name: anip-kyc-service
+    environment:
+      SPRING_PROFILES_ACTIVE: docker
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/anip_platform
+      SPRING_DATASOURCE_USERNAME: anip_user
+      SPRING_DATASOURCE_PASSWORD: anip_password_secure
+      SPRING_REDIS_HOST: redis
+      SPRING_REDIS_PORT: 6379
+      MINIO_URL: http://minio:9000
+      MINIO_ACCESS_KEY: anip_minio_user
+      MINIO_SECRET_KEY: anip_minio_password_secure
+      KEYCLOAK_AUTH_SERVER_URL: http://keycloak:8080
+      ELASTICSEARCH_URL: http://elasticsearch:9200
+    ports:
+      - "8081:8080"
+    depends_on:
+      - postgres
+      - redis
+      - minio
+      - keycloak
+      - elasticsearch
+    networks:
+      - anip-network
+    restart: unless-stopped
+    volumes:
+      - ./kyc-data/documents:/data/documents
+      - ./tessdata:/usr/share/tessdata
+      - ./opencv-models:/models
+
+  # Service Dashboard (Laravel)
+  dashboard-service:
+    build:
+      context: ../dashboard-service
+      dockerfile: Dockerfile
+    container_name: anip-dashboard-service
+    environment:
+      APP_ENV: production
+      APP_DEBUG: false
+      DB_CONNECTION: pgsql
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_DATABASE: anip_platform
+      DB_USERNAME: anip_user
+      DB_PASSWORD: anip_password_secure
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      FILESYSTEM_DRIVER: s3
+      AWS_ENDPOINT: http://minio:9000
+      AWS_ACCESS_KEY_ID: anip_minio_user
+      AWS_SECRET_ACCESS_KEY: anip_minio_password_secure
+      KEYCLOAK_BASE_URL: http://keycloak:8080
+      ELASTICSEARCH_HOST: elasticsearch:9200
+    ports:
+      - "8082:8000"
+    depends_on:
+      - postgres
+      - redis
+      - minio
+      - keycloak
+      - elasticsearch
+    networks:
+      - anip-network
+    restart: unless-stopped
+
+  # Frontend Angular
+  frontend:
+    build:
+      context: ../frontend
+      dockerfile: Dockerfile
+    container_name: anip-frontend
+    environment:
+      KYC_SERVICE_URL: http://localhost:8081
+      DASHBOARD_SERVICE_URL: http://localhost:8082
+      KEYCLOAK_URL: http://localhost:8080
+      KEYCLOAK_REALM: anip
+      KEYCLOAK_CLIENT_ID: anip-frontend
+    ports:
+      - "4200:80"
+    depends_on:
+      - kyc-service
+      - dashboard-service
+    networks:
+      - anip-network
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+  redis_data:
+  minio_data:
+  elasticsearch_data:
+  prometheus_data:
+  grafana_data:
+
+networks:
+  anip-network:
+    driver: bridge

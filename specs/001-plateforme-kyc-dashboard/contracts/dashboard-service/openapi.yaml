@@ -1,0 +1,730 @@
+openapi: 3.0.3
+info:
+  title: ANIP Dashboard Service API
+  description: |
+    Service de dashboard analytique pour la plateforme ANIP.
+    Fournit des statistiques anonymisées, visualisations et rapports 
+    basés sur les données KYC traitées.
+  version: 1.0.0
+  contact:
+    name: ANIP Technical Team
+    email: tech@anip.gov.ml
+
+servers:
+  - url: https://dashboard-api.anip.gov.ml/v1
+    description: Production server
+  - url: https://dashboard-api-staging.anip.gov.ml/v1
+    description: Staging server
+
+security:
+  - BearerAuth: []
+
+paths:
+  /analytics/overview:
+    get:
+      summary: Statistiques générales anonymisées
+      description: |
+        Fournit une vue d'ensemble des métriques KYC anonymisées :
+        nombre d'enrôlements, taux de réussite, tendances temporelles.
+      operationId: getAnalyticsOverview
+      tags:
+        - Analytics
+      parameters:
+        - name: period
+          in: query
+          schema:
+            type: string
+            enum: ["LAST_7_DAYS", "LAST_30_DAYS", "LAST_3_MONTHS", "LAST_YEAR"]
+            default: "LAST_30_DAYS"
+          description: Période d'analyse
+        - name: region
+          in: query
+          schema:
+            type: string
+          description: Filtre par région (optionnel)
+          example: "BAMAKO"
+      responses:
+        '200':
+          description: Statistiques générales récupérées avec succès
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  period:
+                    type: object
+                    properties:
+                      start_date:
+                        type: string
+                        format: date
+                      end_date:
+                        type: string
+                        format: date
+                      period_type:
+                        type: string
+                  metrics:
+                    type: object
+                    properties:
+                      total_sessions:
+                        type: integer
+                        description: Nombre total de sessions KYC
+                        example: 15420
+                      successful_sessions:
+                        type: integer
+                        description: Sessions complétées avec succès
+                        example: 13876
+                      success_rate:
+                        type: number
+                        format: float
+                        description: Taux de réussite en pourcentage
+                        example: 89.98
+                      avg_processing_time:
+                        type: number
+                        format: float
+                        description: Temps moyen de traitement en secondes
+                        example: 4.2
+                      fraud_attempts:
+                        type: integer
+                        description: Tentatives de fraude détectées
+                        example: 127
+                      manual_reviews:
+                        type: integer
+                        description: Sessions nécessitant révision manuelle
+                        example: 1417
+                  trends:
+                    type: object
+                    properties:
+                      daily_registrations:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            date:
+                              type: string
+                              format: date
+                            count:
+                              type: integer
+                      success_rate_trend:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            date:
+                              type: string
+                              format: date
+                            rate:
+                              type: number
+                              format: float
+                  updated_at:
+                    type: string
+                    format: date-time
+        '403':
+          description: Accès refusé - rôle insuffisant
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /analytics/demographics:
+    get:
+      summary: Répartition démographique anonymisée
+      description: |
+        Statistiques démographiques anonymisées respectant k-anonymity (k≥5).
+        Répartition par tranches d'âge, genre (si fourni volontairement) et région.
+      operationId: getDemographics
+      tags:
+        - Demographics
+      parameters:
+        - name: period
+          in: query
+          schema:
+            type: string
+            enum: ["LAST_30_DAYS", "LAST_3_MONTHS", "LAST_YEAR"]
+            default: "LAST_30_DAYS"
+        - name: breakdown_by
+          in: query
+          schema:
+            type: string
+            enum: ["AGE_GROUP", "REGION", "DOCUMENT_TYPE"]
+            default: "AGE_GROUP"
+          description: Type de répartition demandée
+      responses:
+        '200':
+          description: Données démographiques récupérées avec succès
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  breakdown_type:
+                    type: string
+                  total_population:
+                    type: integer
+                    description: Population totale anonymisée
+                  demographics:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        category:
+                          type: string
+                          description: Catégorie (ex. "25-34", "BAMAKO", "NATIONAL_ID")
+                          example: "25-34"
+                        count:
+                          type: integer
+                          description: Nombre (≥5 pour k-anonymity)
+                          example: 3420
+                        percentage:
+                          type: number
+                          format: float
+                          example: 22.18
+                        success_rate:
+                          type: number
+                          format: float
+                          description: Taux de réussite pour cette catégorie
+                          example: 91.2
+                  privacy_notice:
+                    type: string
+                    description: Information sur la protection de la vie privée
+                    example: "Données anonymisées selon standards k-anonymity (k≥5)"
+
+  /analytics/geographic:
+    get:
+      summary: Données géographiques anonymisées
+      description: |
+        Données géospatiales anonymisées pour cartes interactives.
+        Précision limitée au niveau régional pour protection vie privée.
+      operationId: getGeographicData
+      tags:
+        - Geographic
+      parameters:
+        - name: period
+          in: query
+          schema:
+            type: string
+            enum: ["LAST_30_DAYS", "LAST_3_MONTHS", "LAST_YEAR"]
+            default: "LAST_30_DAYS"
+        - name: metric
+          in: query
+          schema:
+            type: string
+            enum: ["REGISTRATIONS", "SUCCESS_RATE", "FRAUD_RATE"]
+            default: "REGISTRATIONS"
+          description: Métrique à afficher sur la carte
+      responses:
+        '200':
+          description: Données géographiques récupérées avec succès
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  metric_type:
+                    type: string
+                  regions:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        region_code:
+                          type: string
+                          example: "ML-1"
+                        region_name:
+                          type: string
+                          example: "Kayes"
+                        country_code:
+                          type: string
+                          example: "MLI"
+                        coordinates:
+                          type: object
+                          description: Centre approximatif de la région (±5km noise)
+                          properties:
+                            latitude:
+                              type: number
+                              format: float
+                              example: 14.4478
+                            longitude:
+                              type: number
+                              format: float
+                              example: -11.4444
+                        metrics:
+                          type: object
+                          properties:
+                            total_registrations:
+                              type: integer
+                              description: Total enregistrements (≥100 minimum)
+                              example: 2340
+                            success_rate:
+                              type: number
+                              format: float
+                              example: 87.5
+                            fraud_rate:
+                              type: number
+                              format: float
+                              example: 1.2
+                            avg_processing_time:
+                              type: number
+                              format: float
+                              example: 4.1
+                  privacy_boundaries:
+                    type: object
+                    description: Limites de précision pour protection vie privée
+                    properties:
+                      min_population_per_region:
+                        type: integer
+                        example: 100
+                      coordinate_noise_radius_km:
+                        type: integer
+                        example: 5
+
+  /analytics/trends:
+    get:
+      summary: Tendances temporelles anonymisées
+      description: |
+        Analyse des tendances temporelles : évolution des enregistrements,
+        taux de fraude, performance du système dans le temps.
+      operationId: getTrends
+      tags:
+        - Trends
+      parameters:
+        - name: metric
+          in: query
+          required: true
+          schema:
+            type: string
+            enum: ["REGISTRATIONS", "SUCCESS_RATE", "FRAUD_RATE", "PROCESSING_TIME"]
+        - name: period
+          in: query
+          schema:
+            type: string
+            enum: ["LAST_7_DAYS", "LAST_30_DAYS", "LAST_3_MONTHS", "LAST_YEAR"]
+            default: "LAST_30_DAYS"
+        - name: granularity
+          in: query
+          schema:
+            type: string
+            enum: ["DAILY", "WEEKLY", "MONTHLY"]
+            default: "DAILY"
+      responses:
+        '200':
+          description: Données de tendances récupérées avec succès
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  metric:
+                    type: string
+                  period:
+                    type: string
+                  granularity:
+                    type: string
+                  data_points:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        timestamp:
+                          type: string
+                          format: date-time
+                        value:
+                          type: number
+                          format: float
+                        metadata:
+                          type: object
+                          description: Métadonnées contextuelles
+                          properties:
+                            sample_size:
+                              type: integer
+                              description: Taille échantillon (pour contexte statistique)
+                  statistical_summary:
+                    type: object
+                    properties:
+                      average:
+                        type: number
+                        format: float
+                      trend_direction:
+                        type: string
+                        enum: ["INCREASING", "DECREASING", "STABLE"]
+                      confidence_level:
+                        type: number
+                        format: float
+                        description: Niveau de confiance statistique
+
+  /reports/export:
+    post:
+      summary: Exporter des données analytiques
+      description: |
+        Génère et exporte des rapports analytiques en formats ouverts.
+        Données entièrement anonymisées pour conformité RGPD.
+      operationId: exportReport
+      tags:
+        - Reports
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - report_type
+                - format
+                - period
+              properties:
+                report_type:
+                  type: string
+                  enum: ["OVERVIEW", "DEMOGRAPHICS", "GEOGRAPHIC", "TRENDS", "AUDIT_SUMMARY"]
+                  description: Type de rapport à générer
+                format:
+                  type: string
+                  enum: ["CSV", "XLSX", "JSON", "PDF"]
+                  description: Format d'export
+                period:
+                  type: object
+                  properties:
+                    start_date:
+                      type: string
+                      format: date
+                    end_date:
+                      type: string
+                      format: date
+                filters:
+                  type: object
+                  description: Filtres optionnels
+                  properties:
+                    regions:
+                      type: array
+                      items:
+                        type: string
+                    document_types:
+                      type: array
+                      items:
+                        type: string
+                    age_groups:
+                      type: array
+                      items:
+                        type: string
+                anonymization_level:
+                  type: string
+                  enum: ["STANDARD", "HIGH"]
+                  default: "STANDARD"
+                  description: Niveau d'anonymisation (HIGH = plus de noise)
+      responses:
+        '202':
+          description: Export initié - traitement asynchrone
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  export_id:
+                    type: string
+                    format: uuid
+                  status:
+                    type: string
+                    enum: ["INITIATED"]
+                  estimated_completion:
+                    type: string
+                    format: date-time
+                  download_url:
+                    type: string
+                    nullable: true
+                    description: URL disponible une fois l'export terminé
+        '400':
+          $ref: '#/components/responses/BadRequest'
+
+  /reports/exports/{exportId}:
+    get:
+      summary: Statut d'un export
+      description: Vérifier le statut d'un export en cours et récupérer le lien de téléchargement
+      operationId: getExportStatus
+      tags:
+        - Reports
+      parameters:
+        - name: exportId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Statut de l'export
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  export_id:
+                    type: string
+                    format: uuid
+                  status:
+                    type: string
+                    enum: ["INITIATED", "PROCESSING", "COMPLETED", "FAILED"]
+                  progress_percentage:
+                    type: integer
+                    minimum: 0
+                    maximum: 100
+                  download_url:
+                    type: string
+                    nullable: true
+                    description: URL de téléchargement (si status = COMPLETED)
+                  expires_at:
+                    type: string
+                    format: date-time
+                    description: Expiration du lien de téléchargement
+                  file_size_bytes:
+                    type: integer
+                    nullable: true
+                  error_message:
+                    type: string
+                    nullable: true
+                    description: Message d'erreur si status = FAILED
+
+  /users/profile:
+    get:
+      summary: Profil utilisateur connecté
+      description: Informations du profil de l'utilisateur connecté avec ses permissions
+      operationId: getUserProfile
+      tags:
+        - User Management
+      responses:
+        '200':
+          description: Profil utilisateur
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  user_id:
+                    type: string
+                    format: uuid
+                  email:
+                    type: string
+                    format: email
+                  first_name:
+                    type: string
+                  last_name:
+                    type: string
+                  role:
+                    type: string
+                    enum: ["AGENT_KYC", "ANALYST_DATA", "ADMIN_SYSTEM"]
+                  department:
+                    type: string
+                  permissions:
+                    type: array
+                    items:
+                      type: string
+                    description: Liste des permissions de l'utilisateur
+                  last_login:
+                    type: string
+                    format: date-time
+                  preferences:
+                    type: object
+                    description: Préférences utilisateur (langue, timezone, etc.)
+                    properties:
+                      language:
+                        type: string
+                        default: "fr"
+                      timezone:
+                        type: string
+                        default: "Africa/Bamako"
+                      dashboard_layout:
+                        type: string
+                        enum: ["COMPACT", "DETAILED"]
+
+  /audit/events:
+    get:
+      summary: Événements d'audit (admins uniquement)
+      description: |
+        Consulter les événements d'audit pour traçabilité.
+        Accès restreint aux administrateurs système.
+      operationId: getAuditEvents
+      tags:
+        - Audit
+      parameters:
+        - name: start_date
+          in: query
+          schema:
+            type: string
+            format: date
+        - name: end_date
+          in: query
+          schema:
+            type: string
+            format: date
+        - name: event_type
+          in: query
+          schema:
+            type: string
+        - name: user_id
+          in: query
+          schema:
+            type: string
+            format: uuid
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 1000
+            default: 100
+        - name: offset
+          in: query
+          schema:
+            type: integer
+            minimum: 0
+            default: 0
+      responses:
+        '200':
+          description: Événements d'audit
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  events:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        event_id:
+                          type: string
+                          format: uuid
+                        timestamp:
+                          type: string
+                          format: date-time
+                        event_type:
+                          type: string
+                        user_id:
+                          type: string
+                          format: uuid
+                        user_email:
+                          type: string
+                          format: email
+                        entity_type:
+                          type: string
+                        entity_id:
+                          type: string
+                          format: uuid
+                        action:
+                          type: string
+                        ip_address:
+                          type: string
+                        user_agent:
+                          type: string
+                        details:
+                          type: object
+                          description: Détails spécifiques à l'événement
+                  pagination:
+                    type: object
+                    properties:
+                      total_count:
+                        type: integer
+                      current_page:
+                        type: integer
+                      total_pages:
+                        type: integer
+                      has_next:
+                        type: boolean
+        '403':
+          description: Accès refusé - privilèges administrateur requis
+
+  /health:
+    get:
+      summary: Vérification santé du service
+      description: Endpoint de monitoring pour vérifier l'état du service Dashboard
+      operationId: healthCheck
+      tags:
+        - Monitoring
+      security: []
+      responses:
+        '200':
+          description: Service en bonne santé
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    enum: ["UP", "DOWN"]
+                  timestamp:
+                    type: string
+                    format: date-time
+                  services:
+                    type: object
+                    properties:
+                      database:
+                        type: string
+                        enum: ["UP", "DOWN"]
+                      kyc_service:
+                        type: string
+                        enum: ["UP", "DOWN"]
+                      keycloak:
+                        type: string
+                        enum: ["UP", "DOWN"]
+                      analytics_processing:
+                        type: string
+                        enum: ["UP", "DOWN"]
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: Token JWT obtenu via Keycloak
+
+  schemas:
+    Error:
+      type: object
+      required:
+        - error_code
+        - message
+      properties:
+        error_code:
+          type: string
+          example: "INSUFFICIENT_PERMISSIONS"
+        message:
+          type: string
+          example: "Permissions insuffisantes pour cette opération"
+        details:
+          type: object
+          additionalProperties: true
+        timestamp:
+          type: string
+          format: date-time
+        request_id:
+          type: string
+
+  responses:
+    BadRequest:
+      description: Requête invalide
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error_code: "INVALID_PARAMETERS"
+            message: "Les paramètres de la requête sont invalides"
+
+    Unauthorized:
+      description: Non autorisé
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error_code: "UNAUTHORIZED"
+            message: "Token d'authentification requis"
+
+    Forbidden:
+      description: Accès refusé
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error_code: "INSUFFICIENT_PERMISSIONS"
+            message: "Rôle insuffisant pour accéder à cette ressource"

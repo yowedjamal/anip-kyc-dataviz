@@ -1,0 +1,4 @@
+contract\DocumentUploadTest.class
+contract\FaceVerificationTest.class
+contract\HealthCheckTest.class
+contract\SessionCreationTest.class
